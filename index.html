@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#173b32">
+<meta name="description" content="Laya Integrated School Junior High School Learning Hub">
+<title>Laya JHS Learning Hub</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<style>
+:root{--green:#173b32;--green2:#245a48;--mint:#eaf2ed;--ink:#1c2924;--muted:#65736c;--line:#dce5df;--paper:#f7f9f7;--white:#fff;--red:#a33131}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{background:var(--green);color:#fff;padding:22px max(20px,calc((100% - 1100px)/2));display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+header h1{font-size:1.35rem;margin:0}header p{margin:3px 0 0;color:#d7e7dd;font-size:.9rem}
+button,.button{border:0;border-radius:9px;padding:11px 15px;background:var(--green2);color:white;font-weight:650;cursor:pointer}button.secondary{background:#edf3ef;color:var(--green)}button.danger{background:var(--red)}button:disabled{opacity:.55;cursor:not-allowed}
+main{max-width:1100px;margin:28px auto;padding:0 18px}.intro{margin-bottom:22px}.intro h2{margin:0 0 4px}.muted{color:var(--muted)}.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.toolbar input,.toolbar select,input,textarea,select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:10px;background:white;color:var(--ink)}.toolbar input{flex:1;min-width:210px}
+.grades{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.grade-btn{background:#e8efea;color:var(--green)}.grade-btn.active{background:var(--green);color:white}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));gap:14px}.card{background:white;border:1px solid var(--line);border-radius:13px;padding:17px;box-shadow:0 2px 8px #173b3208}.card h3{margin:7px 0 4px}.tag{display:inline-block;background:var(--mint);color:var(--green);padding:3px 9px;border-radius:99px;font-size:.78rem;font-weight:700}.card p{color:var(--muted);min-height:42px}.card button{width:100%;margin-top:8px}
+.panel{background:white;border:1px solid var(--line);border-radius:13px;padding:20px;margin:18px 0}.panel h2{margin-top:0}.hidden{display:none!important}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.field{display:flex;flex-direction:column;gap:5px}.field.full{grid-column:1/-1}.field label{font-size:.88rem;font-weight:650}.field input,.field select,.field textarea{width:100%}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.module-row{display:flex;justify-content:space-between;gap:14px;align-items:center;border-top:1px solid var(--line);padding:13px 0}.module-row:first-child{border-top:0}.module-row small{display:block;color:var(--muted)}.code{font-family:ui-monospace,monospace;background:#f0f3f1;padding:3px 7px;border-radius:5px}.notice{padding:12px 14px;border-radius:9px;background:#eef4ef;margin:12px 0}.error{background:#faeeee;color:#852b2b}.success{background:#edf7ef;color:#245a32}footer{text-align:center;color:var(--muted);padding:30px 16px;font-size:.85rem}
+@media(max-width:650px){.form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}.module-row{align-items:flex-start;flex-direction:column}}
+</style>
+</head>
+<body>
+<header>
+ <div><h1>Laya JHS Learning Hub</h1><p>Laya Integrated School · Junior High School · Grades 7–10</p></div>
+ <button id="adminToggle" class="secondary">Administrator</button>
+</header>
+<main>
+ <section class="intro"><h2>Learning Materials</h2><div class="muted">Choose your grade level and subject to find available learning materials.</div></section>
+ <div class="grades" id="gradeFilters">
+  <button class="grade-btn active" data-grade="all">All Grades</button>
+  <button class="grade-btn" data-grade="Grade 7">Grade 7</button>
+  <button class="grade-btn" data-grade="Grade 8">Grade 8</button>
+  <button class="grade-btn" data-grade="Grade 9">Grade 9</button>
+  <button class="grade-btn" data-grade="Grade 10">Grade 10</button>
+ </div>
+ <div class="toolbar"><input id="search" placeholder="Search title or description"><select id="subjectFilter"><option value="all">All subjects</option><option>English</option><option>Filipino</option><option>Mathematics</option><option>Science</option><option>Araling Panlipunan</option><option>MAPEH</option><option>TLE</option><option>ESP</option><option>Other</option></select></div>
+ <div id="status" class="notice">Loading published learning materials…</div>
+ <section class="cards" id="moduleCards"></section>
+ <section id="adminPanel" class="panel hidden">
+  <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><h2>Administrator Dashboard</h2><button id="signOut" class="secondary">Sign out</button></div>
+  <div id="adminMessage" class="notice hidden"></div>
+  <form id="uploadForm">
+   <div class="form-grid">
+    <div class="field"><label for="grade">Grade level</label><select id="grade" required><option>Grade 7</option><option>Grade 8</option><option>Grade 9</option><option>Grade 10</option></select></div>
+    <div class="field"><label for="subject">Subject</label><select id="subject" required><option>English</option><option>Filipino</option><option>Mathematics</option><option>Science</option><option>Araling Panlipunan</option><option>MAPEH</option><option>TLE</option><option>ESP</option><option>Other</option></select></div>
+    <div class="field full"><label for="title">Material title</label><input id="title" maxlength="160" required></div>
+    <div class="field full"><label for="description">Description</label><textarea id="description" rows="2" maxlength="500"></textarea></div>
+    <div class="field"><label for="accessCode">Teacher/student access code</label><input id="accessCode" minlength="6" maxlength="80" required autocomplete="off"></div>
+    <div class="field"><label for="pdfFile">PDF file (maximum 50 MB)</label><input id="pdfFile" type="file" accept="application/pdf,.pdf" required></div>
+   </div>
+   <div class="actions"><button type="submit" id="uploadButton">Upload and publish</button></div>
+  </form>
+  <h3>Manage materials</h3><div id="adminModules" class="muted">Sign in to load materials.</div>
+ </section>
+</main>
+<footer>Laya Integrated School · Junior High School Learning Hub</footer>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = "https://qbqgnrgzjsbooljjbwci.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_I_GcwxTE_dPtSTRCNYzOFQ_0xFwR5D2";
+const ADMIN_USER_ID = "REPLACE_WITH_YOUR_SUPABASE_AUTH_USER_ID";
+const BUCKET = "learning-materials";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let modules=[], selectedGrade="all", adminUser=null;
+const $=id=>document.getElementById(id);
+function message(el,text,type="notice"){el.textContent=text;el.className="notice "+type;el.classList.remove("hidden")}
+function escapeHtml(s=""){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+async function loadModules(){
+ const {data,error}=await sb.from("public_modules").select("id,title,grade,subject,description,published,created_at").eq("published",true).order("created_at",{ascending:false});
+ if(error){message($("status"),"Unable to load materials. Please try again later.","error");return}
+ modules=data||[]; renderModules();
+}
+function renderModules(){
+ const q=$("search").value.toLowerCase(), subject=$("subjectFilter").value;
+ const filtered=modules.filter(m=>(selectedGrade==="all"||m.grade===selectedGrade)&&(subject==="all"||m.subject===subject)&&(`${m.title} ${m.description||""}`).toLowerCase().includes(q));
+ $("moduleCards").innerHTML=filtered.map(m=>`<article class="card"><span class="tag">${escapeHtml(m.grade)} · ${escapeHtml(m.subject)}</span><h3>${escapeHtml(m.title)}</h3><p>${escapeHtml(m.description||"Learning material")}</p><button data-open="${escapeHtml(m.id)}">Open material</button></article>`).join("");
+ $("status").textContent=filtered.length?`${filtered.length} learning material(s) available.`:"No published learning materials found.";
+ $("moduleCards").querySelectorAll("[data-open]").forEach(b=>b.addEventListener("click",()=>openMaterial(b.dataset.open)));
+}
+$("gradeFilters").addEventListener("click",e=>{const b=e.target.closest("[data-grade]");if(!b)return;selectedGrade=b.dataset.grade;document.querySelectorAll(".grade-btn").forEach(x=>x.classList.toggle("active",x===b));renderModules()});
+$("search").addEventListener("input",renderModules);$("subjectFilter").addEventListener("change",renderModules);
+async function openMaterial(id){
+ const m=modules.find(x=>x.id===id);if(!m)return;
+ const code=prompt(`Enter the access code for:\n${m.title}`);if(code===null)return;
+ const btn=[...$("moduleCards").querySelectorAll("button")].find(x=>x.dataset.open===id);if(btn)btn.disabled=true;
+ try{
+  const {data,error}=await sb.functions.invoke("get-protected-module",{body:{module_id:id,access_code:code}});
+  if(error||!data?.success)throw new Error(data?.message||"The access code could not be verified.");
+  const response=await fetch(data.signedUrl);if(!response.ok)throw new Error("The PDF could not be downloaded.");
+  const blob=await response.blob();const cache=await caches.open("laya-jhs-pdfs-v1");
+  await cache.put(new Request(new URL(`offline-pdfs/${encodeURIComponent(id)}.pdf`,location.href)),new Response(blob,{headers:{"Content-Type":"application/pdf"}}));
+  const local=URL.createObjectURL(blob);const w=window.open(local,"_blank");if(!w){const a=document.createElement("a");a.href=local;a.download=m.title+".pdf";a.click()}
+  $("status").textContent="Material unlocked and saved on this device for offline access.";
+ }catch(err){alert(err.message||"Unable to open material.")}finally{if(btn)btn.disabled=false}
+}
+$("adminToggle").addEventListener("click",async()=>{
+ if(adminUser){$("adminPanel").classList.toggle("hidden");return}
+ const email=prompt("Administrator email");if(!email)return;const password=prompt("Administrator password");if(!password)return;
+ const {data,error}=await sb.auth.signInWithPassword({email,password});
+ if(error){alert("Sign-in failed: "+error.message);return}
+ if(data.user.id!==ADMIN_USER_ID){await sb.auth.signOut();alert("This account is not authorized as the site administrator.");return}
+ adminUser=data.user;$("adminPanel").classList.remove("hidden");await loadAdminModules();$("adminPanel").scrollIntoView({behavior:"smooth"});
+});
+$("signOut").addEventListener("click",async()=>{await sb.auth.signOut();adminUser=null;$("adminPanel").classList.add("hidden")});
+function makeId(){return "m-"+crypto.randomUUID()}
+async function loadAdminModules(){
+ const {data,error}=await sb.from("teacher_access_codes").select("module_id,title,grade,subject,access_code,pdf_file,created_at").order("created_at",{ascending:false});
+ if(error){$("adminModules").textContent="Unable to load administrator records: "+error.message;return}
+ $("adminModules").innerHTML=(data||[]).map(m=>`<div class="module-row"><div><strong>${escapeHtml(m.title)}</strong><small>${escapeHtml(m.grade)} · ${escapeHtml(m.subject)} · Code: <span class="code">${escapeHtml(m.access_code)}</span></small></div><div class="actions"><button class="secondary" data-toggle="${escapeHtml(m.module_id)}">Publish/unpublish</button><button class="danger" data-delete="${escapeHtml(m.module_id)}">Delete</button></div></div>`).join("")||"No materials uploaded yet.";
+ $("adminModules").querySelectorAll("[data-toggle]").forEach(b=>b.onclick=()=>togglePublished(b.dataset.toggle));
+ $("adminModules").querySelectorAll("[data-delete]").forEach(b=>b.onclick=()=>deleteMaterial(b.dataset.delete));
+}
+$("uploadForm").addEventListener("submit",async e=>{
+ e.preventDefault();if(!adminUser||adminUser.id!==ADMIN_USER_ID)return;
+ const file=$("pdfFile").files[0];if(!file||file.type!=="application/pdf"||file.size>50*1024*1024){message($("adminMessage"),"Choose a PDF file no larger than 50 MB.","error");return}
+ const id=makeId(),grade=$("grade").value,subject=$("subject").value,path=`${grade.toLowerCase().replace(" ","-")}/${subject.toLowerCase().replace(/[^a-z0-9]+/g,"-")}/${id}.pdf`;
+ $("uploadButton").disabled=true;
+ try{
+  let result=await sb.storage.from(BUCKET).upload(path,file,{contentType:"application/pdf",upsert:false});if(result.error)throw result.error;
+  const record={module_id:id,title:$("title").value.trim(),grade,subject,pdf_file:path,access_code:$("accessCode").value.trim()};
+  result=await sb.from("public_modules").insert({id,title:record.title,grade,subject,description:$("description").value.trim(),published:true});if(result.error)throw result.error;
+  result=await sb.from("teacher_access_codes").insert(record);if(result.error){await sb.from("public_modules").delete().eq("id",id);throw result.error;}
+  message($("adminMessage"),"Material uploaded and published successfully.","success");$("uploadForm").reset();await loadAdminModules();await loadModules();
+ }catch(err){message($("adminMessage"),"Upload failed: "+err.message,"error")}
+ finally{$("uploadButton").disabled=false}
+});
+async function togglePublished(id){
+ const {data,error}=await sb.from("public_modules").select("published").eq("id",id).single();if(error){alert(error.message);return}
+ const result=await sb.from("public_modules").update({published:!data.published}).eq("id",id);if(result.error)alert(result.error.message);else{await loadAdminModules();await loadModules()}
+}
+async function deleteMaterial(id){
+ if(!confirm("Delete this material and its PDF permanently?"))return;
+ const {data,error}=await sb.from("teacher_access_codes").select("pdf_file").eq("module_id",id).single();if(error){alert(error.message);return}
+ let r=await sb.storage.from(BUCKET).remove([data.pdf_file]);if(r.error){alert(r.error.message);return}
+ r=await sb.from("public_modules").delete().eq("id",id);if(r.error){alert(r.error.message);return}
+ r=await sb.from("teacher_access_codes").delete().eq("module_id",id);if(r.error){alert(r.error.message);return}
+ await loadAdminModules();await loadModules()
+}
+if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(console.error));
+loadModules();
+</script>
+</body></html>
