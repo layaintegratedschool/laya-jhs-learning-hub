@@ -79,6 +79,16 @@ footer{text-align:center;color:var(--muted);padding:30px 16px;font-size:.85rem}
   <button class="grade-btn" data-grade="Grade 10">Grade 10</button>
  </div>
 
+ <section id="offlinePreparePanel" class="offline-tools hidden">
+  <h3 id="offlinePrepareTitle">Prepare Offline Library</h3>
+  <p class="muted" id="offlinePrepareDescription">Save authorized learning materials on this device so they can be opened without an internet connection.</p>
+  <div class="actions">
+   <button id="prepareOfflineButton" type="button">Prepare Library</button>
+  </div>
+  <div id="offlinePrepareStatus" class="notice hidden" aria-live="polite"></div>
+  <div id="offlineProgressTrack" class="progress-track hidden"><div id="offlineProgressFill" class="progress-fill"></div></div>
+ </section>
+
  <div class="toolbar">
   <input id="search" placeholder="Search title or description">
   <select id="subjectFilter">
