@@ -37,6 +37,27 @@ main{max-width:1100px;margin:28px auto;padding:0 18px}.intro{margin-bottom:22px}
  <div class="toolbar"><input id="search" placeholder="Search title or description"><select id="subjectFilter"><option value="all">All subjects</option><option>English</option><option>Filipino</option><option>Mathematics</option><option>Science</option><option>Araling Panlipunan</option><option>MAPEH</option><option>TLE</option><option>ESP</option><option>Other</option></select></div>
  <div id="status" class="notice">Loading published learning materials…</div>
  <section class="cards" id="moduleCards"></section>
+
+ <!-- Password recovery panel: shown only after Supabase verifies a recovery link. -->
+ <section id="passwordResetPanel" class="panel hidden">
+  <h2>Set a New Administrator Password</h2>
+  <p class="muted">Enter your new password below to restore access to your administrator account.</p>
+  <form id="passwordResetForm">
+   <div class="form-grid">
+    <div class="field">
+     <label for="newPassword">New password</label>
+     <input id="newPassword" type="password" minlength="8" autocomplete="new-password" required>
+    </div>
+    <div class="field">
+     <label for="confirmPassword">Confirm new password</label>
+     <input id="confirmPassword" type="password" minlength="8" autocomplete="new-password" required>
+    </div>
+   </div>
+   <div id="passwordResetMessage" class="notice hidden"></div>
+   <div class="actions"><button type="submit" id="saveNewPassword">Save New Password</button></div>
+  </form>
+ </section>
+
  <section id="adminPanel" class="panel hidden">
   <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><h2>Administrator Dashboard</h2><button id="signOut" class="secondary">Sign out</button></div>
   <div id="adminMessage" class="notice hidden"></div>
@@ -64,8 +85,58 @@ const BUCKET = "learning-materials";
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let modules=[], selectedGrade="all", adminUser=null;
 const $=id=>document.getElementById(id);
+
 function message(el,text,type="notice"){el.textContent=text;el.className="notice "+type;el.classList.remove("hidden")}
 function escapeHtml(s=""){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+
+// Detect when Supabase verifies a password recovery link.
+// Defer DOM updates so the Supabase auth event can finish processing first.
+let recoverySessionReady = false;
+sb.auth.onAuthStateChange((event, session) => {
+ if(event === "PASSWORD_RECOVERY" && session){
+  recoverySessionReady = true;
+  setTimeout(() => {
+   $("passwordResetPanel").classList.remove("hidden");
+   $("passwordResetPanel").scrollIntoView({behavior:"smooth"});
+   $("status").textContent = "Password recovery verified. You can now set a new password.";
+  }, 0);
+ }
+});
+
+$("passwordResetForm").addEventListener("submit", async e => {
+ e.preventDefault();
+ const password=$("newPassword").value;
+ const confirmation=$("confirmPassword").value;
+ const button=$("saveNewPassword");
+
+ if(password.length<8){
+  message($("passwordResetMessage"),"Your password must contain at least 8 characters.","error");
+  return;
+ }
+ if(password!==confirmation){
+  message($("passwordResetMessage"),"The passwords do not match.","error");
+  return;
+ }
+ button.disabled=true;
+ button.textContent="Saving...";
+ try{
+  const {data,error}=await sb.auth.updateUser({password});
+  if(error)throw error;
+  message($("passwordResetMessage"),"Your administrator password has been changed successfully.","success");
+  $("passwordResetForm").reset();
+  await sb.auth.signOut();
+  adminUser=null;
+  $("adminPanel").classList.add("hidden");
+  alert("Password successfully changed! You may now sign in using your new password.");
+  $("passwordResetPanel").classList.add("hidden");
+ }catch(error){
+  message($("passwordResetMessage"),"Unable to change password: "+error.message,"error");
+ }finally{
+  button.disabled=false;
+  button.textContent="Save New Password";
+ }
+});
+
 async function loadModules(){
  const {data,error}=await sb.from("public_modules").select("id,title,grade,subject,description,published,created_at").eq("published",true).order("created_at",{ascending:false});
  if(error){message($("status"),"Unable to load materials. Please try again later.","error");return}
