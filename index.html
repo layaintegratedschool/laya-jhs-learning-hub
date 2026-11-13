@@ -51,6 +51,10 @@ main{max-width:1100px;margin:28px auto;padding:0 18px}
 .notice{padding:12px 14px;border-radius:9px;background:#eef4ef;margin:12px 0}
 .error{background:#faeeee;color:#852b2b;overflow-wrap:anywhere}
 .success{background:#edf7ef;color:#245a32}
+.offline-tools{background:#fff;border:1px solid var(--line);border-radius:13px;padding:16px;margin:14px 0}
+.offline-tools h3{margin:0 0 6px}
+.progress-track{height:9px;background:#e8efea;border-radius:99px;overflow:hidden;margin:10px 0}
+.progress-fill{height:100%;width:0;background:var(--green2);transition:width .2s}
 footer{text-align:center;color:var(--muted);padding:30px 16px;font-size:.85rem}
 @media(max-width:650px){.form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}.module-row{align-items:flex-start;flex-direction:column}}
 </style>
@@ -171,18 +175,23 @@ const SUPABASE_ANON_KEY = "sb_publishable_I_GcwxTE_dPtSTRCNYzOFQ_0xFwR5D2";
 const ADMIN_USER_ID = "541cbfeb-6ea6-4640-b80d-0ffd4c4abb6c";
 const BUCKET = "learning-materials";
 
-const sb = window.supabase.createClient(
- SUPABASE_URL,
- SUPABASE_ANON_KEY,
- {
-  auth: {
-   flowType: "implicit",
-   autoRefreshToken: true,
-   persistSession: true,
-   detectSessionInUrl: true
-  }
- }
-);
+const sb = window.supabase?.createClient
+ ? window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
+    {
+     auth: {
+      flowType: "implicit",
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true
+     }
+    }
+   )
+ : null;
+
+const MODULES_CACHE_KEY = "laya-jhs-public-modules-v1";
+const PDF_CACHE_NAME = "laya-jhs-pdfs-v1";
 
 let modules = [];
 let selectedGrade = "all";
@@ -213,15 +222,17 @@ function describeError(err){
 }
 
 // PASSWORD RECOVERY
-sb.auth.onAuthStateChange((event,session)=>{
- if(event==="PASSWORD_RECOVERY"&&session){
-  setTimeout(()=>{
-   $("passwordResetPanel").classList.remove("hidden");
-   $("passwordResetPanel").scrollIntoView({behavior:"smooth"});
-   $("status").textContent="Password recovery verified. You can now set a new password.";
-  },0);
- }
-});
+if(sb){
+ sb.auth.onAuthStateChange((event,session)=>{
+  if(event==="PASSWORD_RECOVERY"&&session){
+   setTimeout(()=>{
+    $("passwordResetPanel").classList.remove("hidden");
+    $("passwordResetPanel").scrollIntoView({behavior:"smooth"});
+    $("status").textContent="Password recovery verified. You can now set a new password.";
+   },0);
+  }
+ });
+}
 
 $("passwordResetForm").addEventListener("submit",async e=>{
  e.preventDefault();
@@ -267,19 +278,48 @@ $("passwordResetForm").addEventListener("submit",async e=>{
 
 // PUBLIC MATERIALS
 async function loadModules(){
- const {data,error}=await sb
-  .from("public_modules")
-  .select("id,title,grade,subject,description,published,created_at")
-  .eq("published",true)
-  .order("created_at",{ascending:false});
+ // Try Supabase while online. The public catalog contains metadata only,
+ // never access codes or private file paths.
+ if(sb && navigator.onLine){
+  try{
+   const {data,error}=await sb
+    .from("public_modules")
+    .select("id,title,grade,subject,description,published,created_at")
+    .eq("published",true)
+    .order("created_at",{ascending:false});
 
- if(error){
-  message($("status"),"Unable to load materials. "+describeError(error),"error");
-  return;
+   if(error)throw error;
+
+   modules=data||[];
+   try{localStorage.setItem(MODULES_CACHE_KEY,JSON.stringify(modules));}catch(e){}
+   renderModules();
+   return;
+  }catch(error){
+   console.warn("Online catalog refresh failed:",error);
+  }
  }
 
- modules=data||[];
+ // If offline (or Supabase is unavailable), use the last public catalog
+ // saved on this device so the page still works after a refresh.
+ try{
+  const saved=localStorage.getItem(MODULES_CACHE_KEY);
+  if(saved){
+   const parsed=JSON.parse(saved);
+   modules=Array.isArray(parsed)?parsed:[];
+   renderModules();
+   message($("status"),"Offline catalog: showing the last materials list saved on this device. Only PDFs previously saved here can be opened offline.","notice");
+   return;
+  }
+ }catch(error){
+  console.warn("Saved catalog could not be read:",error);
+ }
+
+ modules=[];
  renderModules();
+ message($("status"),sb
+  ? "Unable to load materials. Connect to the internet and try again."
+  : "The offline page is open, but this device has no saved materials list yet. Connect to the internet once to load the catalog.",
+  "error");
 }
 
 function renderModules(){
@@ -297,6 +337,7 @@ function renderModules(){
    <span class="tag">${escapeHtml(m.grade)} · ${escapeHtml(m.subject)}</span>
    <h3>${escapeHtml(m.title)}</h3>
    <p>${escapeHtml(m.description||"Learning material")}</p>
+   <small class="muted" data-saved-label="${escapeHtml(m.id)}">Checking this device…</small>
    <button data-open="${escapeHtml(m.id)}">Open material</button>
   </article>
  `).join("");
@@ -308,6 +349,8 @@ function renderModules(){
  $("moduleCards").querySelectorAll("[data-open]").forEach(b=>{
   b.addEventListener("click",()=>openMaterial(b.dataset.open));
  });
+ updateOfflinePanel();
+ refreshSavedLabels();
 }
 
 $("gradeFilters").addEventListener("click",e=>{
@@ -323,6 +366,127 @@ $("gradeFilters").addEventListener("click",e=>{
 
 $("search").addEventListener("input",renderModules);
 $("subjectFilter").addEventListener("change",renderModules);
+
+function offlinePdfRequest(id){
+ return new Request(new URL(
+  `offline-pdfs/${encodeURIComponent(id)}.pdf`,
+  location.href
+ ));
+}
+
+async function isPdfSaved(id){
+ try{
+  const cache=await caches.open(PDF_CACHE_NAME);
+  return !!(await cache.match(offlinePdfRequest(id)));
+ }catch(error){
+  return false;
+ }
+}
+
+async function refreshSavedLabels(){
+ const labels=[...$("moduleCards").querySelectorAll("[data-saved-label]")];
+ for(const label of labels){
+  const saved=await isPdfSaved(label.dataset.savedLabel);
+  label.textContent=saved?"Saved on this device · Available offline":"Not yet saved on this device";
+ }
+}
+
+function updateOfflinePanel(){
+ const panel=$("offlinePreparePanel");
+ const button=$("prepareOfflineButton");
+ if(selectedGrade==="all"){
+  panel.classList.add("hidden");
+  return;
+ }
+ panel.classList.remove("hidden");
+ $("offlinePrepareTitle").textContent=`Prepare ${selectedGrade} Library`;
+ $("offlinePrepareDescription").textContent=`Save the published ${selectedGrade} PDFs on this device. Each material that is not already saved will require its own access code.`;
+ button.textContent=`Prepare ${selectedGrade} Library`;
+}
+
+$("prepareOfflineButton").addEventListener("click",prepareOfflineLibrary);
+
+async function prepareOfflineLibrary(){
+ if(selectedGrade==="all")return;
+ if(!navigator.onLine || !sb){
+  message($("offlinePrepareStatus"),"Connect to the internet before preparing this grade's library. Previously saved PDFs remain available offline.","error");
+  return;
+ }
+
+ const gradeModules=modules.filter(m=>m.grade===selectedGrade);
+ if(!gradeModules.length){
+  message($("offlinePrepareStatus"),`There are no published materials listed for ${selectedGrade}.`,"notice");
+  return;
+ }
+
+ const button=$("prepareOfflineButton");
+ const status=$("offlinePrepareStatus");
+ const track=$("offlineProgressTrack");
+ const fill=$("offlineProgressFill");
+ button.disabled=true;
+ track.classList.remove("hidden");
+ status.classList.remove("hidden");
+
+ let saved=0, alreadySaved=0, skipped=0, failed=0, completed=0;
+ const total=gradeModules.length;
+
+ for(const m of gradeModules){
+  message(status,`Checking ${completed+1} of ${total}: ${m.title}`,"notice");
+
+  if(await isPdfSaved(m.id)){
+   alreadySaved++;
+   completed++;
+   fill.style.width=`${Math.round(completed/total*100)}%`;
+   continue;
+  }
+
+  const code=prompt(`Enter the access code for this material:\n\n${m.title}\n${m.grade} · ${m.subject}\n\nChoose Cancel to stop preparing the remaining materials.`);
+  if(code===null){
+   skipped+=total-completed;
+   break;
+  }
+
+  try{
+   const {data,error}=await sb.functions.invoke(
+    "get-protected-module",
+    {body:{module_id:m.id,access_code:code}}
+   );
+   if(error || !data?.success){
+    throw new Error(data?.message||describeError(error)||"Access code verification failed.");
+   }
+
+   const response=await fetch(data.signedUrl);
+   if(!response.ok)throw new Error("The PDF download failed.");
+
+   const blob=await response.blob();
+   const cache=await caches.open(PDF_CACHE_NAME);
+   await cache.put(
+    offlinePdfRequest(m.id),
+    new Response(blob,{headers:{"Content-Type":"application/pdf"}})
+   );
+   saved++;
+  }catch(error){
+   failed++;
+   alert(`Could not save "${m.title}".\n\n${error.message||"Unknown error"}`);
+  }
+
+  completed++;
+  fill.style.width=`${Math.round(completed/total*100)}%`;
+ }
+
+ await refreshSavedLabels();
+ button.disabled=false;
+
+ const summary=`Preparation finished for ${selectedGrade}. Newly saved: ${saved}. Already saved: ${alreadySaved}. Skipped: ${skipped}. Failed: ${failed}.`;
+ message(status,summary,failed?"error":"success");
+}
+
+window.addEventListener("online",()=>{
+ if(sb)loadModules();
+});
+window.addEventListener("offline",()=>{
+ $("status").textContent="You are offline. The saved catalog and previously saved PDFs can still be used on this device.";
+});
 
 // OPEN PROTECTED MODULE
 
@@ -431,6 +595,10 @@ async function openMaterial(id) {
 
 // ADMINISTRATOR LOGIN
 $("adminToggle").addEventListener("click",async()=>{
+ if(!sb){
+  alert("Administrator functions require an internet connection. The public offline library can still be used.");
+  return;
+ }
  if(adminUser){
   $("adminPanel").classList.toggle("hidden");
   return;
@@ -756,6 +924,7 @@ if("serviceWorker" in navigator){
 }
 
 // INITIAL LOAD
+updateOfflinePanel();
 loadModules();
 </script>
 </body>
