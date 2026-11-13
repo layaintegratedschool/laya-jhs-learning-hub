@@ -325,56 +325,108 @@ $("search").addEventListener("input",renderModules);
 $("subjectFilter").addEventListener("change",renderModules);
 
 // OPEN PROTECTED MODULE
-async function openMaterial(id){
- const m=modules.find(x=>x.id===id);
- if(!m)return;
 
- const code=prompt(`Enter the access code for:\n${m.title}`);
- if(code===null)return;
+async function openMaterial(id) {
+  const m = modules.find(x => x.id === id);
+  if (!m) return;
 
- const btn=[...$("moduleCards").querySelectorAll("button")]
-  .find(x=>x.dataset.open===id);
-
- if(btn)btn.disabled=true;
-
- try{
-  const {data,error}=await sb.functions.invoke(
-   "get-protected-module",
-   {body:{module_id:id,access_code:code}}
+  const cacheKey = new Request(
+    new URL(
+      `offline-pdfs/${encodeURIComponent(id)}.pdf`,
+      location.href
+    )
   );
 
-  if(error||!data?.success){
-   throw new Error(data?.message||describeError(error)||"The access code could not be verified.");
+  const openPDF = blob => {
+    const local = URL.createObjectURL(blob);
+    const w = window.open(local, "_blank");
+
+    if (!w) {
+      const a = document.createElement("a");
+      a.href = local;
+      a.download = m.title + ".pdf";
+      a.click();
+    }
+  };
+
+  // Check whether this PDF was previously saved
+  const cache = await caches.open("laya-jhs-pdfs-v1");
+  const savedPDF = await cache.match(cacheKey);
+
+  // Offline: open previously unlocked PDF
+  if (!navigator.onLine) {
+    if (savedPDF) {
+      const blob = await savedPDF.blob();
+      openPDF(blob);
+
+      $("status").textContent =
+        "Offline mode: Previously unlocked material opened from this device.";
+
+      return;
+    }
+
+    alert(
+      "This material has not been saved on this device yet. Connect to the internet and unlock it first."
+    );
+
+    return;
   }
 
-  const response=await fetch(data.signedUrl);
-  if(!response.ok)throw new Error("The PDF could not be downloaded.");
-
-  const blob=await response.blob();
-  const cache=await caches.open("laya-jhs-pdfs-v1");
-
-  await cache.put(
-   new Request(new URL(`offline-pdfs/${encodeURIComponent(id)}.pdf`,location.href)),
-   new Response(blob,{headers:{"Content-Type":"application/pdf"}})
+  // Online: verify the access code normally
+  const code = prompt(
+    `Enter the access code for:\n${m.title}`
   );
 
-  const local=URL.createObjectURL(blob);
-  const w=window.open(local,"_blank");
+  if (code === null) return;
 
-  if(!w){
-   const a=document.createElement("a");
-   a.href=local;
-   a.download=m.title+".pdf";
-   a.click();
+  const btn = [
+    ...$("moduleCards").querySelectorAll("button")
+  ].find(x => x.dataset.open === id);
+
+  if (btn) btn.disabled = true;
+
+  try {
+    const { data, error } = await sb.functions.invoke(
+      "get-protected-module",
+      { body: { module_id: id, access_code: code } }
+    );
+
+    if (error || !data?.success) {
+      throw new Error(
+        data?.message ||
+        describeError(error) ||
+        "The access code could not be verified."
+      );
+    }
+
+    const response = await fetch(data.signedUrl);
+
+    if (!response.ok) {
+      throw new Error("The PDF could not be downloaded.");
+    }
+
+    const blob = await response.blob();
+
+    // Save the unlocked PDF for future offline access
+    await cache.put(
+      cacheKey,
+      new Response(blob, {
+        headers: {
+          "Content-Type": "application/pdf"
+        }
+      })
+    );
+
+    openPDF(blob);
+
+    $("status").textContent =
+      "Material unlocked and saved on this device for offline access.";
+
+  } catch (err) {
+    alert(err.message || "Unable to open material.");
+  } finally {
+    if (btn) btn.disabled = false;
   }
-
-  $("status").textContent="Material unlocked and saved on this device for offline access.";
-
- }catch(err){
-  alert(err.message||"Unable to open material.");
- }finally{
-  if(btn)btn.disabled=false;
- }
 }
 
 // ADMINISTRATOR LOGIN
